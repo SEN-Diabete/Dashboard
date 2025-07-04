@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <base target="_top">
+  <title>SEN'Diabète - Tableau de bord</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f9f9f9;
+      margin: 0;
+    }
+
+    h1, h2, h3 {
+      color: #009688;
+      margin-top: 0;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+      background: white;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+
+    th {
+      background-color: #eee;
+    }
+
+    input, button {
+      margin: 5px 0;
+      padding: 8px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+
+    button {
+      background-color: #009688;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #00796B;
+    }
+
+    #authSection {
+      max-width: 400px;
+      margin: 50px auto;
+      text-align: center;
+      padding: 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    #dashboard {
+      max-width: 900px;
+      margin: 30px auto;
+    }
+
+    #dashboard button {
+      margin-bottom: 15px;
+      padding: 10px 20px;
+      background-color: #0d6efd;
+      border-radius: 6px;
+    }
+
+    #dashboard button:hover {
+      background-color: #084298;
+    }
+
+    #authMsg {
+      margin-top: 15px;
+      font-weight: bold;
+      min-height: 24px;
+    }
+  </style>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyC4T4cc-WcvBsts7dmmqh_I1cFLzuaxKos",
+      authDomain: "sendiabete-app.firebaseapp.com",
+      projectId: "sendiabete-app"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+
+    const actionCodeSettings = {
+      url: "https://sen-diabete.github.io/Dashboard/",
+      handleCodeInApp: true
+    };
+
+    function sendSignInLink() {
+      alert("Tentative d'envoi de lien...");
+      const email = document.getElementById("emailInput").value.trim();
+      if (!email) {
+        alert("Merci d'entrer une adresse email valide.");
+        return;
+      }
+      firebase.auth().sendSignInLinkToEmail(email, actionCodeSettings)
+        .then(() => {
+          window.localStorage.setItem('emailForSignIn', email);
+          document.getElementById("authMsg").style.color = "green";
+          document.getElementById("authMsg").innerText = "✅ Lien magique envoyé à " + email;
+        })
+        .catch(err => {
+          document.getElementById("authMsg").style.color = "red";
+          document.getElementById("authMsg").innerText = "❌ Erreur : " + err.message;
+        });
+    }
+
+    window.onload = function () {
+      if (firebase.auth().isSignInWithEmailLink(window.location.href)) {
+        let email = window.localStorage.getItem('emailForSignIn');
+        if (!email) {
+          email = window.prompt("Veuillez confirmer votre adresse email pour connexion");
+        }
+        firebase.auth().signInWithEmailLink(email, window.location.href)
+          .then(result => {
+            document.getElementById("authSection").style.display = "none";
+            document.getElementById("dashboard").style.display = "block";
+            document.getElementById("docName").innerText = email;
+
+            google.script.run.withSuccessHandler(function(patients){
+              renderPatients(patients);
+              chargerAlertes(email);
+            }).chargerPatientsMedecin(email);
+          })
+          .catch(error => {
+            document.getElementById("authMsg").style.color = "red";
+            document.getElementById("authMsg").innerText = "❌ Erreur de connexion : " + error.message;
+          });
+      }
+    };
+
+    function renderPatients(data) {
+      const tbody = document.querySelector("#patientsTable tbody");
+      tbody.innerHTML = "";
+      data.forEach(p => {
+        const row = `<tr>
+          <td>${p.nom}</td>
+          <td>${p.prenom}</td>
+          <td>${p.age}</td>
+          <td>${p.type}</td>
+          <td>${p.tel}</td>
+          <td><button onclick="envoyerAudio('${p.id}', 'ok')">🔊</button></td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    function renderAlertes(data) {
+      const tbody = document.querySelector("#alertesTable tbody");
+      tbody.innerHTML = "";
+      if (!data.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#666;">Aucune alerte en attente.</td></tr>`;
+        return;
+      }
+      data.forEach(a => {
+        const row = `<tr>
+          <td>${a.nom} ${a.prenom}</td>
+          <td>${new Date(a.date).toLocaleString()}</td>
+          <td>${a.type}</td>
+          <td>${a.valeur.toFixed(2)}</td>
+          <td><button onclick="envoyerAudioAlerte('${a.idPatient}', '${a.type}')">🔊</button></td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    function envoyerAudio(id, type) {
+      google.script.run.envoyerAlerteAudio(id, type);
+    }
+
+    function envoyerAudioAlerte(idPatient, typeAlerte) {
+      google.script.run.envoyerAlerteAudio(idPatient, typeAlerte);
+    }
+
+    function chargerAlertes(email) {
+      google.script.run.withSuccessHandler(renderAlertes).chargerAlertesMedecin(email);
+    }
+
+    function genererPDF() {
+      google.script.run.genererSuiviMensuelPDF();
+      alert("PDF envoyé aux médecins par mail.");
+    }
+  </script>
+</head>
+
+<body>
+  <div id="authSection">
+    <h2>🔐 Connexion Sécurisée SEN'Diabète</h2>
+    <p>Entrez votre adresse email pour recevoir un lien de connexion sécurisé.</p>
+    <input type="email" id="emailInput" placeholder="Votre email">
+    <p style="font-size: 13px; color: #555; margin-top: 5px;">
+      💡 Vous recevrez un lien sécurisé directement par email. Aucun mot de passe n’est nécessaire.
+    </p>
+    <button onclick="sendSignInLink()">📩 Envoyer lien magique</button>
+    <p id="authMsg"></p>
+  </div>
+
+  <div id="dashboard" style="display:none;">
+    <h2>Bienvenue Docteur <span id="docName"></span></h2>
+    <button onclick="genererPDF()">📤 Générer PDF mensuel</button>
+
+    <h3>👥 Liste des patients suivis</h3>
+    <table id="patientsTable">
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Prénom</th>
+          <th>Âge</th>
+          <th>Type</th>
+          <th>Téléphone</th>
+          <th>🔊</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>🔴 Alertes glycémiques en attente</h3>
+    <table id="alertesTable">
+      <thead>
+        <tr>
+          <th>Patient</th>
+          <th>Date</th>
+          <th>Type d'alerte</th>
+          <th>Valeur (g/L)</th>
+          <th>Envoyer Audio</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</body>
+</html>
