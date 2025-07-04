@@ -132,6 +132,7 @@
         let email = window.localStorage.getItem('emailForSignIn');
         if (!email) {
           email = window.prompt("Veuillez confirmer votre adresse email pour connexion");
+          window.localStorage.setItem('emailForSignIn', email); // Pour conserver la session même après refresh
         }
         firebase.auth().signInWithEmailLink(email, window.location.href)
           .then(result => {
