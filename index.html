@@ -203,6 +203,17 @@
       google.script.run.genererSuiviMensuelPDF();
       alert("PDF envoyé aux médecins par mail.");
     }
+    function genererId() {
+  const nom = document.getElementById('nom').value.trim();
+  const prenom = document.getElementById('prenom').value.trim();
+  const age = document.getElementById('age').value.trim();
+  if (nom && prenom && age) {
+    const idGen = "SD-" + prenom[0].toUpperCase() + nom[0].toUpperCase() + age + Math.floor(Math.random() * 900 + 100);
+    document.getElementById('idPatient').value = idGen;
+  } else {
+    document.getElementById('idPatient').value = "";
+  }
+}
   </script>
 </head>
 
