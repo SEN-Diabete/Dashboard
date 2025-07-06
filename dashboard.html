@@ -2,87 +2,247 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Dashboard Médecin – SEN'Diabète</title>
-  <link rel="stylesheet" href="style.css">
-  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
-  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"></script>
-  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
-  <script type="module" src="firebase-config.js"></script>
-</head>
-<body>
-  <div class="container">
-    <h1>👩‍⚕️ Bienvenue Docteur</h1>
-    <p id="medecinEmail" class="text-gray-500"></p>
-
-    <div id="stats" style="margin-top: 20px;"></div>
-
-    <h2 style="margin-top: 30px;">👥 Vos patients</h2>
-    <div id="patients"></div>
-  </div>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SEN'Diabète - Dashboard Médecin</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Firebase SDK -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-    import { firebaseConfig } from './firebase-config.js';
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+    import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+    // Config Firebase - à adapter avec la tienne
+    const firebaseConfig = {
+      apiKey: "AIzaSyC4T4cc-WcvBsts7dmmqh_I1cFLzuaxKos",
+      authDomain: "sendiabete-app.firebaseapp.com",
+      projectId: "sendiabete-app",
+      storageBucket: "sendiabete-app.firebasestorage.app",
+      messagingSenderId: "1059445382855",
+      appId: "1:1059445382855:web:101cdd6b28b5c76c9ae8e2"
+    };
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    const patientsContainer = document.getElementById("patients");
-    const statsContainer = document.getElementById("stats");
-    const emailDisplay = document.getElementById("medecinEmail");
+    window.addEventListener('DOMContentLoaded', () => {
+      const userEmailSpan = document.getElementById("userEmail");
+      const logoutBtn = document.getElementById("btnLogout");
 
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const email = user.email;
-        emailDisplay.textContent = email;
+      logoutBtn.onclick = () => {
+        signOut(auth).then(() => {
+          window.location.href = "index.html";
+        });
+      };
 
-        // 🔍 Filtrer les patients par UID médecin
+      onAuthStateChanged(auth, async (user) => {
+        if (!user) {
+          window.location.href = "index.html";
+          return;
+        }
+
+        userEmailSpan.textContent = user.email;
+
+        // 1. Récupérer médecin par email
+        const medecinsRef = collection(db, "medecins");
+        const qMed = query(medecinsRef, where("email", "==", user.email));
+        const medecinsSnap = await getDocs(qMed);
+
+        if (medecinsSnap.empty) {
+          alert("Médecin non trouvé. Contactez l’administrateur.");
+          return;
+        }
+
+        const medecinDoc = medecinsSnap.docs[0];
+        const medecinId = medecinDoc.id;
+
+        // 2. Récupérer patients liés
         const patientsRef = collection(db, "patients");
-        const q = query(patientsRef, where("medecin_email", "==", email));
-        const querySnapshot = await getDocs(q);
+        const qPatients = query(patientsRef, where("medecin_id", "==", medecinId));
+        const patientsSnap = await getDocs(qPatients);
 
-        let total = 0, hyper = 0, hypo = 0, equilibres = 0, inactifs = 0;
+        const patients = patientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        patientsContainer.innerHTML = "";
+        afficherStats(patients);
+        afficherPatients(patients);
+      });
 
-        querySnapshot.forEach((doc) => {
-          const p = doc.data();
-          total++;
+      function afficherStats(patients) {
+        const statsDiv = document.getElementById("stats");
+        const total = patients.length;
+        let hypo = 0, hyper = 0, equilibres = 0, inactifs = 0;
 
+        patients.forEach(p => {
           const val = parseFloat(p.derniere_glycemie);
-          let couleur = "grey";
           if (!val) inactifs++;
-          else if (val > 1.5) { hyper++; couleur = "red"; }
-          else if (val < 0.7) { hypo++; couleur = "orange"; }
-          else { equilibres++; couleur = "green"; }
-
-          const card = `
-            <div class="card ${couleur}">
-              <div class="patient-name">${p.nom} ${p.prenom}</div>
-              <p>📞 ${p.telephone}</p>
-              <p>🧪 Glycémie : ${p.derniere_glycemie || 'N/A'} g/L</p>
-              <p>📅 Dernière : ${p.date_derniere_glycemie || '-'}</p>
-              <button onclick="window.location.href='fiche.html?id=${doc.id}'">Voir fiche</button>
-            </div>`;
-          patientsContainer.innerHTML += card;
+          else if (val > 1.5) hyper++;
+          else if (val < 0.7) hypo++;
+          else equilibres++;
         });
 
-        const taux = (x) => total ? Math.round((x / total) * 100) + "%" : "0%";
-        statsContainer.innerHTML = `
-          <div class="stat-box green">Équilibrés<br>${taux(equilibres)}</div>
-          <div class="stat-box red">Hyper<br>${taux(hyper)}</div>
-          <div class="stat-box orange">Hypo<br>${taux(hypo)}</div>
-          <div class="stat-box grey">Inactifs<br>${taux(inactifs)}</div>
-          <div class="stat-box">Total<br>${total}</div>
+        statsDiv.innerHTML = `
+          <div class="stat">Total patients : <strong>${total}</strong></div>
+          <div class="stat red">Hyperglycémie : ${((hyper / total) * 100).toFixed(1)}%</div>
+          <div class="stat orange">Hypoglycémie : ${((hypo / total) * 100).toFixed(1)}%</div>
+          <div class="stat green">Équilibrés : ${((equilibres / total) * 100).toFixed(1)}%</div>
+          <div class="stat grey">Inactifs : ${((inactifs / total) * 100).toFixed(1)}%</div>
         `;
-      } else {
-        window.location.href = "index.html";
+      }
+
+      function afficherPatients(patients) {
+        const container = document.getElementById("patients");
+        container.innerHTML = "";
+
+        patients.forEach(p => {
+          const val = parseFloat(p.derniere_glycemie);
+          const couleur = !val ? "grey" : val > 1.5 ? "red" : val < 0.7 ? "orange" : "green";
+
+          // Générer lien WhatsApp avec message personnalisé
+          const telNettoye = p.telephone ? p.telephone.replace(/\D/g, "") : "";
+          const message = encodeURIComponent(`Bonjour ${p.prenom}, ceci est un rappel de suivi de votre glycémie.`);
+          const lienWhatsApp = `https://wa.me/${telNettoye}?text=${message}`;
+
+          const card = document.createElement("div");
+          card.className = `card ${couleur}`;
+          card.innerHTML = `
+            <h4>${p.nom} ${p.prenom}</h4>
+            <p>📞 ${p.telephone || "Non renseigné"}</p>
+            <p>🩸 Type de diabète : ${p.type_diabete || "N/A"}</p>
+            <p>📊 Dernière glycémie : ${p.derniere_glycemie || "N/A"} g/L</p>
+            <p>📅 Date dernier suivi : ${p.date_derniere_glycemie ? new Date(p.date_derniere_glycemie.seconds * 1000).toLocaleDateString() : "N/A"}</p>
+            <a href="${lienWhatsApp}" target="_blank" class="btn-whatsapp">Envoyer WhatsApp</a>
+          `;
+          container.appendChild(card);
+        });
       }
     });
   </script>
+  <style>
+    /* Style simple et professionnel */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f9f9f9;
+      color: #333;
+    }
+    header {
+      background: #008080;
+      color: white;
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.5em;
+    }
+    #userEmail {
+      font-weight: bold;
+    }
+    #btnLogout {
+      background: #c0392b;
+      border: none;
+      color: white;
+      padding: 8px 15px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    #btnLogout:hover {
+      background: #e74c3c;
+    }
+    main {
+      padding: 20px;
+      max-width: 900px;
+      margin: auto;
+    }
+    #stats {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+    }
+    .stat {
+      background: #eee;
+      padding: 15px 20px;
+      border-radius: 8px;
+      min-width: 140px;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      font-weight: 600;
+    }
+    .red { background: #f8d7da; color: #842029; }
+    .orange { background: #fff3cd; color: #664d03; }
+    .green { background: #d1e7dd; color: #0f5132; }
+    .grey { background: #e2e3e5; color: #41464b; }
+
+    #patients {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 15px;
+    }
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .card.red {
+      border-left: 5px solid #dc3545;
+    }
+    .card.orange {
+      border-left: 5px solid #ffc107;
+    }
+    .card.green {
+      border-left: 5px solid #198754;
+    }
+    .card.grey {
+      border-left: 5px solid #6c757d;
+    }
+    .btn-whatsapp {
+      margin-top: 10px;
+      background: #25d366;
+      color: white;
+      text-decoration: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      font-weight: bold;
+      text-align: center;
+      transition: background 0.3s ease;
+    }
+    .btn-whatsapp:hover {
+      background: #128c4a;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      #stats {
+        flex-direction: column;
+      }
+      #patients {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SEN'Diabète - Dashboard Médecin</h1>
+    <div>
+      Connecté en tant que : <span id="userEmail"></span>
+      <button id="btnLogout">Se déconnecter</button>
+    </div>
+  </header>
+  <main>
+    <section id="stats">
+      <!-- Statistiques ici -->
+    </section>
+    <section id="patients">
+      <!-- Liste des patients ici -->
+    </section>
+  </main>
 </body>
 </html>
