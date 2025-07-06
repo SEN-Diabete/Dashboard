@@ -2,20 +2,28 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>SEN'Diabète - Tableau de bord</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard Médecin – SEN'Diabète</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"></script>
+  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
+  <script type="module" src="firebase-config.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1>👨‍⚕️ Tableau de bord Médecin</h1>
-    <p id="email"></p>
+    <h1>👩‍⚕️ Bienvenue Docteur</h1>
+    <p id="medecinEmail" class="text-gray-500"></p>
+
+    <div id="stats" style="margin-top: 20px;"></div>
+
+    <h2 style="margin-top: 30px;">👥 Vos patients</h2>
     <div id="patients"></div>
-    <button onclick="logout()">Déconnexion</button>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from './firebase-config.js';
 
@@ -23,37 +31,58 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    const emailEl = document.getElementById("email");
-    const patientsEl = document.getElementById("patients");
+    const patientsContainer = document.getElementById("patients");
+    const statsContainer = document.getElementById("stats");
+    const emailDisplay = document.getElementById("medecinEmail");
 
     onAuthStateChanged(auth, async (user) => {
       if (user) {
-        emailEl.textContent = "Bienvenue Dr " + user.email;
-        const uid = user.uid;
+        const email = user.email;
+        emailDisplay.textContent = email;
 
-        const q = query(collection(db, "patients"), where("id_medecin", "==", uid));
-        const snapshot = await getDocs(q);
+        // 🔍 Filtrer les patients par UID médecin
+        const patientsRef = collection(db, "patients");
+        const q = query(patientsRef, where("medecin_email", "==", email));
+        const querySnapshot = await getDocs(q);
 
-        patientsEl.innerHTML = "";
-        snapshot.forEach(doc => {
+        let total = 0, hyper = 0, hypo = 0, equilibres = 0, inactifs = 0;
+
+        patientsContainer.innerHTML = "";
+
+        querySnapshot.forEach((doc) => {
           const p = doc.data();
-          patientsEl.innerHTML += `
-            <div class="card">
-              <h3>${p.nom} ${p.prenom}</h3>
+          total++;
+
+          const val = parseFloat(p.derniere_glycemie);
+          let couleur = "grey";
+          if (!val) inactifs++;
+          else if (val > 1.5) { hyper++; couleur = "red"; }
+          else if (val < 0.7) { hypo++; couleur = "orange"; }
+          else { equilibres++; couleur = "green"; }
+
+          const card = `
+            <div class="card ${couleur}">
+              <div class="patient-name">${p.nom} ${p.prenom}</div>
               <p>📞 ${p.telephone}</p>
-              <p>🧪 Dernière glycémie : ${p.derniere_glycemie ?? '—'}</p>
+              <p>🧪 Glycémie : ${p.derniere_glycemie || 'N/A'} g/L</p>
+              <p>📅 Dernière : ${p.date_derniere_glycemie || '-'}</p>
+              <button onclick="window.location.href='fiche.html?id=${doc.id}'">Voir fiche</button>
             </div>`;
+          patientsContainer.innerHTML += card;
         });
+
+        const taux = (x) => total ? Math.round((x / total) * 100) + "%" : "0%";
+        statsContainer.innerHTML = `
+          <div class="stat-box green">Équilibrés<br>${taux(equilibres)}</div>
+          <div class="stat-box red">Hyper<br>${taux(hyper)}</div>
+          <div class="stat-box orange">Hypo<br>${taux(hypo)}</div>
+          <div class="stat-box grey">Inactifs<br>${taux(inactifs)}</div>
+          <div class="stat-box">Total<br>${total}</div>
+        `;
       } else {
-        window.location.href = "index.html"; // Retour vers login
+        window.location.href = "index.html";
       }
     });
-
-    function logout() {
-      signOut(auth).then(() => {
-        window.location.href = "index.html";
-      });
-    }
   </script>
 </body>
 </html>
